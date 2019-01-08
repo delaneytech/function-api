@@ -1,0 +1,121 @@
+buildscript {
+	ext {
+		kotlinVersion = '1.2.71'
+		springBootVersion = '2.1.1.RELEASE'
+	}
+	repositories {
+		jcenter()
+		mavenCentral()
+	}
+	dependencies {
+		classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+		classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
+		classpath("org.jetbrains.kotlin:kotlin-allopen:${kotlinVersion}")
+		classpath("com.bmuschko:gradle-docker-plugin:3.2.5")
+		classpath("com.github.jengelman.gradle.plugins:shadow:2.0.4")
+
+	}
+}
+
+apply plugin: 'kotlin'
+apply plugin: 'kotlin-spring'
+apply plugin: 'eclipse'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+apply plugin: 'com.bmuschko.docker-remote-api'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+import com.bmuschko.gradle.docker.tasks.image.*
+
+group = 'io.theground'
+version = '0.0.1-SNAPSHOT'
+rootProject.ext {
+	buildVersion = '0001'
+}
+sourceCompatibility = 1.8
+compileKotlin {
+	kotlinOptions {
+		freeCompilerArgs = ["-Xjsr305=strict"]
+		jvmTarget = "1.8"
+	}
+}
+compileTestKotlin {
+	kotlinOptions {
+		freeCompilerArgs = ["-Xjsr305=strict"]
+		jvmTarget = "1.8"
+	}
+}
+
+shadowJar {
+	zip64 true
+}
+
+task copyDockerFiles(type: Copy, dependsOn: bootJar) {
+	from "${project.buildDir}/libs"
+	into { "${project.buildDir}/docker" }
+}
+
+task createDockerFile(type: Dockerfile, dependsOn: copyDockerFiles) {
+	destFile = project.file("${project.buildDir}/docker/Dockerfile")
+	from 'local/openjdk-jre-8-bash'
+	maintainer 'rich delaney'
+	addFile( "${rootProject.name}-${version}.jar", "/app.jar")
+	environmentVariable {
+		['JAVA_OPTS': '']
+	}
+	instruction {
+		'EXPOSE 8080'
+	}
+	defaultCommand {
+		['java', '-jar', '/app.jar']
+	}
+
+}
+
+task buildImage(type: DockerBuildImage, dependsOn: createDockerFile) {
+	inputDir = createDockerFile.destFile.parentFile
+}
+
+task tagImage(type: DockerTagImage, dependsOn: buildImage) {
+	targetImageId { buildImage.getImageId() }
+	repository = "hub.theground.io/${rootProject.name}"
+	tag = "${version}-${buildVersion}"
+}
+
+repositories {
+	jcenter()
+	mavenCentral()
+	maven { url "https://repo.spring.io/milestone" }
+}
+
+configurations {
+	all*.exclude group: 'org.springframework.boot', module: 'spring-boot-starter-security'
+}
+
+
+ext['springCloudVersion'] = 'Greenwich.RC2'
+
+dependencies {
+//	implementation('org.springframework.boot:spring-boot-starter-actuator')
+//	implementation('org.springframework.boot:spring-boot-starter-hateoas')
+//	implementation('org.springframework.boot:spring-boot-starter-security')
+//	implementation('org.springframework.boot:spring-boot-starter-integration')
+	implementation('org.springframework.boot:spring-boot-starter-webflux')
+	implementation('com.fasterxml.jackson.module:jackson-module-kotlin')
+	implementation('org.springframework.cloud:spring-cloud-starter-aws')
+//	implementation('org.springframework.cloud.stream.app:spring-cloud-starter-stream-sink-s3:2.0.1.RELEASE')
+//	implementation('org.springframework.cloud:spring-cloud-starter-config')
+//	implementation('org.springframework.cloud:spring-cloud-starter-netflix-eureka-client')
+//	implementation('org.springframework.cloud:spring-cloud-starter-netflix-hystrix')
+	implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+	implementation("org.jetbrains.kotlin:kotlin-reflect")
+	runtimeOnly('org.springframework.boot:spring-boot-devtools')
+	testImplementation('org.springframework.boot:spring-boot-starter-test')
+	testImplementation('io.projectreactor:reactor-test')
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+	}
+}
